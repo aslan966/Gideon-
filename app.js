@@ -276,7 +276,7 @@
 
   // ===== Локальные системные команды (не требуют вызова ИИ, срабатывают мгновенно) =====
   const localCommands = {
-    "help": ()=> "Доступные системные команды:\nhelp — список команд\nping — проверка связи с ядром\ntime — текущее время\ndiagnostics — диагностика систем\nreboot — сброс памяти и перезапуск сессии\ntimeline — статус временной линии\nspeedforce — статус связи со Спидфорсом\nвизуализация — запустить симулятор Спидфорса\nвзрыв / портал / спавн10 / спавн50 / скриншот — управление открытым симулятором\nсохрани сцену / загрузи сцену — снапшот текущей расстановки частиц\nрекорды — статистика симулятора\nчертежи / ускоритель частиц / тахионный ускоритель / костюм флэша / холодное оружие / трон гидеона / беговая дорожка / маска / хроносфера — техническая документация\nжурнал — бортовой журнал последних действий\nаномалии — сканирование реальной погоды в стиле аномалий временной линии\nclear — очистить экран терминала\n\nВсе остальные запросы обрабатывает ИИ-ядро напрямую.",
+    "help": ()=> "Доступные системные команды:\nhelp — список команд\nping — проверка связи с ядром\ntime — текущее время\ndiagnostics — диагностика систем\nreboot — сброс памяти и перезапуск сессии\ntimeline — статус временной линии\nspeedforce — статус связи со Спидфорсом\nвизуализация — запустить симулятор Спидфорса\nвзрыв / портал / спавн10 / спавн50 / скриншот — управление открытым симулятором\nсохрани сцену / загрузи сцену — снапшот текущей расстановки частиц\nрекорды — статистика симулятора\nчертежи / ускоритель частиц / тахионный ускоритель / костюм флэша / холодное оружие / трон гидеона / беговая дорожка / маска / хроносфера — техническая документация\nжурнал — бортовой журнал последних действий\nэкспорт журнала — скачать бортовой журнал файлом\nаномалии — сканирование реальной погоды в стиле аномалий временной линии\nхроника сезонов — сюжетная хроника всех сезонов\nвикторина — проверка знаний по лору\nclear — очистить экран терминала\n\nВсе остальные запросы обрабатывает ИИ-ядро напрямую.",
     "ping": ()=> "Ответ от ядра: 2 мс. Связь стабильна.",
     "time": ()=> `Текущее время: ${new Date().toLocaleString('ru-RU')}`,
     "diagnostics": ()=> "Запуск диагностики...\nИИ-ядро ............ OK\nСпидфорс-связь ...... OK\nПамять .............. OK\nВременная линия ..... OK\nВсе системы работают штатно.",
@@ -305,8 +305,11 @@
     "маска": ()=> { openBlueprints('cowl'); return "Открываю схему маски. Версия зависит от текущей темы интерфейса."; },
     "хроносфера": ()=> { openBlueprints('chronosphere'); return "Открываю чертёж хроносферы Легиона."; },
     "журнал": ()=> showIncidentLog(),
+    "экспорт журнала": ()=> { exportIncidentLog(); return null; },
+    "экспорт журнала": ()=> { exportIncidentLog(); return null; },
     "аномалии": ()=> checkTimelineAnomalies(),
     "хроника сезонов": ()=> showSeasonChronicle(),
+    "викторина": ()=> { openQuiz(); return null; },
     "доходяг": ()=> { openEasterEgg2(); return "Файл найден. Не спрашивайте."; },
   };
 
@@ -373,6 +376,24 @@
       return `[${t}] ${e.text}`;
     });
     return "БОРТОВОЙ ЖУРНАЛ S.T.A.R. LABS — последние записи:\n" + entries.join('\n');
+  }
+  function exportIncidentLog(){
+    if(incidentLog.length === 0){
+      notify('Журнал пуст — экспортировать нечего');
+      return;
+    }
+    let text = `GIDEON — бортовой журнал S.T.A.R. LABS (Doctor Wels)\n${new Date().toLocaleString('ru-RU')}\n${'='.repeat(40)}\n\n`;
+    incidentLog.forEach(e=>{
+      text += `[${e.time.toLocaleString('ru-RU')}] ${e.text}\n`;
+    });
+    const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gideon-incident-log-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify('Бортовой журнал экспортирован в файл');
   }
 
   // ===== "Аномалии временной линии" — реальные данные погоды, поданные в стиле Гидеона =====
@@ -459,6 +480,104 @@
     { s: 8, title: 'Обратный Флэш возвращается', text: 'Финальная дуэль Барри и Тоуна — эпичная схватка, заканчивающаяся видимой гибелью злодея.', reveal: null, finale: 'Финал 8x20 "Negative, Part Two"' },
     { s: 9, title: 'Кобальт Синий', text: 'Финал сериала: Эдди Тоун становится Кобальт Синим, вытягивает силу у воскрешённых злодеев прошлого (Годспид, Савитар, Обратный Флэш) — и всё равно проигрывает в последней битве Барри.', reveal: null, finale: 'Финал 9x13 "A New World, Part Four: Finale"' },
   ];
+
+  // ===== Квиз по лору =====
+  const QUIZ_EXTRA = [
+    { q: 'Кто из злодеев не является спидстером?', options: ['Зум', 'Савитар', 'Мыслитель (Дево)', 'Годспид'], correct: 2 },
+    { q: 'Как называется энергия, дающая Флэшу и другим спидстерам их силы?', options: ['Спидфорс', 'Тёмная материя', 'Тахионный поток', 'Мультиверсальная сеть'], correct: 0 },
+    { q: 'Кто такой Гидеон в оригинальном каноне сериала?', options: ['ИИ, созданный командой S.T.A.R. Labs с нуля', 'ИИ, изначально созданный Эобардом Тоуном в XXII веке', 'Робот-андроид Барри Аллена', 'Программа Национальной безопасности'], correct: 1 },
+  ];
+  let quizQuestions = [];
+  let quizIndex = 0;
+  let quizScore = 0;
+  let quizAnswered = false;
+
+  function buildQuizQuestions(){
+    const villainQs = SEASON_CHRONICLE.map(e => {
+      const others = SEASON_CHRONICLE.filter(o => o.s !== e.s).map(o => o.title);
+      const distractors = [];
+      while(distractors.length < 3 && others.length){
+        const pick = others.splice(Math.floor(Math.random()*others.length), 1)[0];
+        if(pick) distractors.push(pick);
+      }
+      const options = [e.title, ...distractors];
+      for(let i = options.length - 1; i > 0; i--){
+        const j = Math.floor(Math.random() * (i + 1));
+        [options[i], options[j]] = [options[j], options[i]];
+      }
+      return {
+        q: `Кто был главным злодеем ${e.s} сезона?`,
+        options,
+        correct: options.indexOf(e.title)
+      };
+    });
+    const all = villainQs.concat(QUIZ_EXTRA);
+    for(let i = all.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [all[i], all[j]] = [all[j], all[i]];
+    }
+    return all.slice(0, 6);
+  }
+
+  function openQuiz(){
+    quizQuestions = buildQuizQuestions();
+    quizIndex = 0;
+    quizScore = 0;
+    document.getElementById('quiz-modal').classList.add('open');
+    renderQuizQuestion();
+    logIncident('Запущен квиз по лору Спидфорса');
+  }
+  function closeQuiz(){
+    document.getElementById('quiz-modal').classList.remove('open');
+  }
+  function renderQuizQuestion(){
+    quizAnswered = false;
+    const content = document.getElementById('quiz-content');
+    if(quizIndex >= quizQuestions.length){
+      renderQuizResult();
+      return;
+    }
+    const q = quizQuestions[quizIndex];
+    let html = `<div class="quiz-progress">ВОПРОС ${quizIndex+1} ИЗ ${quizQuestions.length}</div>`;
+    html += `<div class="quiz-question">${q.q}</div>`;
+    q.options.forEach((opt, i) => {
+      html += `<button class="quiz-option" onclick="answerQuiz(${i})">${opt}</button>`;
+    });
+    content.innerHTML = html;
+  }
+  function answerQuiz(i){
+    if(quizAnswered) return;
+    quizAnswered = true;
+    const q = quizQuestions[quizIndex];
+    const buttons = document.querySelectorAll('#quiz-content .quiz-option');
+    buttons.forEach((btn, idx) => {
+      btn.disabled = true;
+      if(idx === q.correct) btn.classList.add('correct');
+      else if(idx === i) btn.classList.add('wrong');
+    });
+    if(i === q.correct){
+      quizScore++;
+      hVibrate(40);
+    } else {
+      hVibrate([30,30,30]);
+    }
+    setTimeout(() => {
+      quizIndex++;
+      renderQuizQuestion();
+    }, 1100);
+  }
+  function renderQuizResult(){
+    const content = document.getElementById('quiz-content');
+    const total = quizQuestions.length;
+    let verdict;
+    if(quizScore === total) verdict = 'Идеально, Doctor Wels. Спидфорс синхронизирован полностью.';
+    else if(quizScore >= total * 0.6) verdict = 'Неплохо, но пробелы в архиве есть.';
+    else verdict = 'Слабый результат. Рекомендую пересмотреть хронику сезонов.';
+    content.innerHTML = `
+      <div class="quiz-result">Результат: ${quizScore} / ${total}<br><span style="font-size:12px;color:var(--text-dim)">${verdict}</span></div>
+      <button class="quiz-restart" onclick="openQuiz()">Пройти ещё раз</button>
+    `;
+  }
 
   function applyVisitVariety(){
     // Случайное приветствие — новое при каждой загрузке страницы
@@ -1052,6 +1171,7 @@
 
   document.addEventListener('keydown', e=>{
     if(e.key === 'Escape' && simModal.classList.contains('open')) closeSimModal();
+    if(e.key === 'Escape' && document.getElementById('quiz-modal').classList.contains('open')) closeQuiz();
   });
 
   // ===== Экспорт диалога =====
@@ -1072,6 +1192,25 @@
     a.click();
     URL.revokeObjectURL(url);
     notify('Диалог экспортирован в файл');
+  }
+
+  function exportIncidentLog(){
+    if(incidentLog.length === 0){
+      notify('Бортовой журнал пуст — экспортировать нечего');
+      return;
+    }
+    let text = `GIDEON — бортовой журнал S.T.A.R. LABS\nDoctor Wels\n${new Date().toLocaleString('ru-RU')}\n${'='.repeat(40)}\n\n`;
+    incidentLog.forEach(e=>{
+      text += `[${e.time.toLocaleString('ru-RU')}] ${e.text}\n`;
+    });
+    const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gideon-incident-log-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify('Бортовой журнал экспортирован в файл');
   }
 
   // ===== Тема (синхронизирована с симулятором) =====
@@ -1219,6 +1358,8 @@
       if(eg2.classList.contains('open')) closeEasterEgg2();
       const eg3 = document.getElementById('egg3-modal');
       if(eg3.classList.contains('open')) closeEasterEgg3();
+      const quizM = document.getElementById('quiz-modal');
+      if(quizM.classList.contains('open')) closeQuiz();
     }
   });
   (async ()=>{
