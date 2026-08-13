@@ -66,8 +66,19 @@
 
   function typeBoot(){
     if(li >= bootLines.length){
-      const gate = document.getElementById('boot-gate');
-      gate.classList.add('show');
+      const auto = document.getElementById('boot-auto');
+      auto.classList.add('show');
+      // небольшая пауза, затем полоса начинает заполняться
+      setTimeout(()=> auto.classList.add('filled'), 150);
+      // текст меняется на "готово" ближе к концу заполнения
+      setTimeout(()=>{
+        auto.classList.add('done');
+        document.getElementById('boot-auto-text').textContent = 'ДОСТУП ПОДТВЕРЖДЁН';
+      }, 1150);
+      // экран закрывается сам, без нажатий
+      setTimeout(()=>{
+        document.getElementById('boot').classList.add('hidden');
+      }, 1700);
       return;
     }
     const line = bootLines[li];
@@ -82,21 +93,6 @@
     }
   }
   typeBoot();
-
-  document.getElementById('boot-gate').addEventListener('click', function(){
-    const gate = this;
-    if(gate.classList.contains('scanning') || gate.classList.contains('confirmed')) return;
-    gate.classList.add('scanning');
-    document.getElementById('boot-gate-text').textContent = 'СКАНИРОВАНИЕ ЛАДОНИ...';
-    setTimeout(()=>{
-      gate.classList.remove('scanning');
-      gate.classList.add('confirmed');
-      document.getElementById('boot-gate-text').textContent = 'ДОСТУП ПОДТВЕРЖДЁН';
-    }, 750);
-    setTimeout(()=>{
-      document.getElementById('boot').classList.add('hidden');
-    }, 1250);
-  });
 
   const log = document.getElementById('log');
   const cmdInput = document.getElementById('cmd');
