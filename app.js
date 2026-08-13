@@ -53,46 +53,11 @@
   }
 
   // Boot sequence
-  const bootLines = [
-    "GIDEON OS v4.7.2 — INITIALIZING...",
-    "Проверка целостности временной линии... OK",
-    "Синхронизация со Спидфорсом... OK",
-    "Загрузка личности: Гидеон... OK",
-    "Распознавание пользователя: Doctor Wels — ДОСТУП РАЗРЕШЁН",
-    "Запуск интерфейса..."
-  ];
-  const bootEl = document.getElementById('boot-text');
-  let li = 0, ci = 0, output = "";
-
-  function typeBoot(){
-    if(li >= bootLines.length){
-      const auto = document.getElementById('boot-auto');
-      auto.classList.add('show');
-      // небольшая пауза, затем полоса начинает заполняться
-      setTimeout(()=> auto.classList.add('filled'), 150);
-      // текст меняется на "готово" ближе к концу заполнения
-      setTimeout(()=>{
-        auto.classList.add('done');
-        document.getElementById('boot-auto-text').textContent = 'ДОСТУП ПОДТВЕРЖДЁН';
-      }, 1150);
-      // экран закрывается сам, без нажатий
-      setTimeout(()=>{
-        document.getElementById('boot').classList.add('hidden');
-      }, 1700);
-      return;
-    }
-    const line = bootLines[li];
-    if(ci <= line.length){
-      output = bootLines.slice(0,li).join("\n") + (li>0?"\n":"") + line.slice(0,ci);
-      bootEl.innerHTML = output.replace(/\n/g,"<br>") + '<span id="boot-cursor"></span>';
-      ci++;
-      setTimeout(typeBoot, 14);
-    } else {
-      li++; ci=0;
-      setTimeout(typeBoot, 180);
-    }
-  }
-  typeBoot();
+  // Простая автозагрузка: молния пульсирует, экран сам закрывается через 1.6с
+  setTimeout(()=>{
+    const boot = document.getElementById('boot');
+    if(boot) boot.classList.add('hidden');
+  }, 1600);
 
   const log = document.getElementById('log');
   const cmdInput = document.getElementById('cmd');
@@ -100,7 +65,7 @@
   const coreWrap = document.getElementById('core-wrap');
   const loadBar = document.getElementById('load-bar');
   const notifyBox = document.getElementById('notify');
-  const boltEl = document.querySelector('.bolt');
+  const boltEl = document.getElementById('boot-bolt');
 
   // ===== Часы =====
   const clockEl = document.getElementById('clock');
