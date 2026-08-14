@@ -67,6 +67,20 @@
   const notifyBox = document.getElementById('notify');
   const boltEl = document.getElementById('boot-bolt');
 
+  // Красим молнию загрузки под сохранённую тему — до того, как остальной интерфейс её подхватит
+  (async function applyBootBoltTheme(){
+    try{
+      const stored = await storageGet('gideon-theme');
+      if(stored && stored.value){
+        const data = JSON.parse(stored.value);
+        if(data.negative && boltEl){
+          boltEl.setAttribute('fill', '#ff3b5c');
+          boltEl.style.filter = 'drop-shadow(0 0 14px rgba(255,59,92,0.8))';
+        }
+      }
+    } catch(e){}
+  })();
+
   // ===== Часы =====
   const clockEl = document.getElementById('clock');
   function tickClock(){
@@ -74,6 +88,18 @@
   }
   tickClock();
   setInterval(tickClock, 1000);
+
+  // ===== Тон интерфейса по времени суток (чисто атмосферная деталь) =====
+  (function applyDaytimeTint(){
+    const hour = new Date().getHours();
+    const tint = document.getElementById('daytime-tint');
+    if(!tint) return;
+    let color, opacity;
+    if(hour >= 18 && hour < 23){ color = '255,150,80'; opacity = 0.05; }       // вечер — тёплый
+    else if(hour >= 23 || hour < 6){ color = '80,90,160'; opacity = 0.06; }    // ночь — холоднее и глубже
+    else { color = '79,224,255'; opacity = 0.02; }                             // день — почти нейтрально
+    tint.style.background = `radial-gradient(ellipse at 50% 0%, rgba(${color},${opacity}), transparent 60%)`;
+  })();
 
   // ===== Живой показатель синхронизации (косметика, но с полезной привязкой к состоянию) =====
   const syncEl = document.getElementById('sync-readout');
@@ -93,6 +119,17 @@
     setTimeout(ambientFlash, 4000 + Math.random()*5000);
   }
   setTimeout(ambientFlash, 3000);
+
+  // ===== Ярлыки быстрого доступа (App Shortcuts) — открывают нужный раздел сразу после загрузки =====
+  (function handleShortcut(){
+    const params = new URLSearchParams(window.location.search);
+    const open = params.get('open');
+    if(!open) return;
+    setTimeout(()=>{
+      if(open === 'sim') openSimModal();
+      else if(open === 'terminal') document.getElementById('cmd').focus();
+    }, 1700);
+  })();
 
   // ===== Свечение ядра при вводе =====
   cmdInput.addEventListener('input', ()=>{
@@ -162,6 +199,184 @@
     try{
       if(navigator.vibrate) navigator.vibrate(pattern);
     } catch(e){}
+  }
+
+  // ===== Визуальный шторм при критической погодной аномалии =====
+  let stormTimer = null;
+  function triggerStorm(){
+    const overlay = document.getElementById('storm-overlay');
+    if(!overlay) return;
+    overlay.classList.add('active');
+    clearTimeout(stormTimer);
+    stormTimer = setTimeout(()=> overlay.classList.remove('active'), 5000);
+  }
+
+  // ===== Система достижений =====
+  const ACHIEVEMENTS = [
+    { id:'chatty', name:'Разговорчивый', desc:'100 сообщений Гидеону' },
+    { id:'archivist', name:'Архивариус', desc:'Все секретные архивы найдены' },
+    { id:'record_breaker', name:'Покоритель рекордов', desc:'Рекорд симулятора побит 5 раз' },
+    { id:'quiz_master', name:'Знаток лора', desc:'Идеальный результат в викторине' },
+    { id:'week_streak', name:'Неразрывная связь', desc:'7 дней подряд на связи' },
+  ];
+  const STATS_KEY = 'gideon-stats';
+  const UNLOCKED_KEY = 'gideon-unlocked-achievements';
+  let gStats = { messages: 0, recordsBeat: 0 };
+
+  async function loadStats(){
+    try{
+      const stored = await storageGet(STATS_KEY);
+      if(stored && stored.value) gStats = JSON.parse(stored.value);
+    } catch(e){}
+  }
+  async function saveStats(){
+    try{ await storageSet(STATS_KEY, JSON.stringify(gStats)); } catch(e){}
+  }
+  async function bumpStat(key, amount = 1){
+    gStats[key] = (gStats[key] || 0) + amount;
+    await saveStats();
+    checkAchievements();
+  }
+  async function checkAchievements(){
+    let unlocked = [];
+    try{
+      const stored = await storageGet(UNLOCKED_KEY);
+      if(stored && stored.value) unlocked = JSON.parse(stored.value);
+    } catch(e){}
+
+    let secretsFound = 0, streakCount = 0, quizPerfect = false;
+    try{
+      const d = await storageGet(DISCOVERED_KEY);
+      if(d && d.value) secretsFound = JSON.parse(d.value).length;
+    } catch(e){}
+    try{
+      const s = await storageGet('gideon-streak');
+      if(s && s.value) streakCount = (JSON.parse(s.value).count) || 0;
+    } catch(e){}
+    quizPerfect = !!gStats.quizPerfect;
+
+    const progress = {
+      chatty: gStats.messages >= 100,
+      archivist: secretsFound >= TOTAL_SECRETS,
+      record_breaker: (gStats.recordsBeat || 0) >= 5,
+      quiz_master: quizPerfect,
+      week_streak: streakCount >= 7,
+    };
+
+    for(const a of ACHIEVEMENTS){
+      if(progress[a.id] && !unlocked.includes(a.id)){
+        unlocked.push(a.id);
+        notify(`🏅 Достижение: ${a.name}`);
+        hVibrate([50,40,50,40,90]);
+        logIncident(`Разблокировано достижение: ${a.name}`);
+      }
+    }
+    try{ await storageSet(UNLOCKED_KEY, JSON.stringify(unlocked)); } catch(e){}
+    return unlocked;
+  }
+  async function showAchievements(){
+    const unlocked = await checkAchievements();
+    const lines = ACHIEVEMENTS.map(a => {
+      const mark = unlocked.includes(a.id) ? '✅' : '▫';
+      return `${mark} ${a.name} — ${a.desc}`;
+    });
+    return `ДОСТИЖЕНИЯ (${unlocked.length}/${ACHIEVEMENTS.length}):\n\n` + lines.join('\n');
+  }
+
+  // ===== Мини-игра "Поймай молнию" =====
+  const GAME_BEST_KEY = 'gideon-lightning-game-best';
+  let gameScore = 0;
+  let gameTimeLeft = 30;
+  let gameTimerHandle = null;
+  let gameSpawnHandle = null;
+  let gameTargetId = 0;
+  let gameActive = false;
+
+  async function openLightningGame(){
+    document.getElementById('lightning-game-modal').classList.add('open');
+    document.getElementById('game-footer').innerHTML =
+      '<button class="game-start-btn" onclick="startLightningGame()">▶ НАЧАТЬ (30 СЕК)</button>';
+    document.getElementById('game-area').innerHTML = '';
+    document.getElementById('game-score').textContent = 'Очки: 0';
+    document.getElementById('game-timer').textContent = 'Время: 30';
+    let best = 0;
+    try{
+      const stored = await storageGet(GAME_BEST_KEY);
+      if(stored && stored.value) best = parseInt(stored.value, 10) || 0;
+    } catch(e){}
+    document.getElementById('game-best').textContent = `Рекорд: ${best}`;
+    logIncident('Открыта мини-игра «Поймай молнию»');
+  }
+  function closeLightningGame(){
+    stopLightningGame();
+    document.getElementById('lightning-game-modal').classList.remove('open');
+  }
+  function startLightningGame(){
+    gameScore = 0;
+    gameTimeLeft = 30;
+    gameActive = true;
+    document.getElementById('game-footer').innerHTML = '';
+    document.getElementById('game-score').textContent = 'Очки: 0';
+    document.getElementById('game-timer').textContent = 'Время: 30';
+    document.getElementById('game-area').innerHTML = '';
+
+    gameTimerHandle = setInterval(()=>{
+      gameTimeLeft--;
+      document.getElementById('game-timer').textContent = `Время: ${gameTimeLeft}`;
+      if(gameTimeLeft <= 0) finishLightningGame();
+    }, 1000);
+
+    spawnGameTarget();
+  }
+  function spawnGameTarget(){
+    if(!gameActive) return;
+    const area = document.getElementById('game-area');
+    const target = document.createElement('div');
+    const id = ++gameTargetId;
+    target.className = 'game-target';
+    target.textContent = '⚡';
+    target.style.color = document.body.classList.contains('neg-theme') ? '#ff3b5c' : '#4fe0ff';
+    const maxX = Math.max(0, area.clientWidth - 44);
+    const maxY = Math.max(0, area.clientHeight - 44);
+    target.style.left = Math.floor(Math.random() * maxX) + 'px';
+    target.style.top = Math.floor(Math.random() * maxY) + 'px';
+    target.onclick = ()=>{
+      if(!gameActive) return;
+      gameScore++;
+      document.getElementById('game-score').textContent = `Очки: ${gameScore}`;
+      hVibrate(30);
+      target.remove();
+    };
+    area.appendChild(target);
+
+    const lifespan = 850 - Math.min(300, gameScore * 8); // со временем цели живут чуть меньше
+    setTimeout(()=>{ if(target.parentNode) target.remove(); }, lifespan);
+
+    gameSpawnHandle = setTimeout(spawnGameTarget, 500 + Math.random() * 350);
+  }
+  function stopLightningGame(){
+    gameActive = false;
+    clearInterval(gameTimerHandle);
+    clearTimeout(gameSpawnHandle);
+  }
+  async function finishLightningGame(){
+    stopLightningGame();
+    document.getElementById('game-area').innerHTML = '';
+    let best = 0;
+    try{
+      const stored = await storageGet(GAME_BEST_KEY);
+      if(stored && stored.value) best = parseInt(stored.value, 10) || 0;
+      if(gameScore > best){
+        best = gameScore;
+        await storageSet(GAME_BEST_KEY, String(best));
+      }
+    } catch(e){}
+    document.getElementById('game-best').textContent = `Рекорд: ${best}`;
+    document.getElementById('game-footer').innerHTML = `
+      <div class="game-result">Результат: ${gameScore}${gameScore >= best && gameScore > 0 ? ' — новый рекорд!' : ''}</div>
+      <button class="game-start-btn" onclick="startLightningGame()">▶ ЕЩЁ РАЗ</button>
+    `;
+    logIncident(`Мини-игра завершена: ${gameScore} очков`);
   }
 
   // ===== Счётчик найденных секретных архивов =====
@@ -267,9 +482,12 @@
     "хроносфера": ()=> { openBlueprints('chronosphere'); return "Открываю чертёж хроносферы Легиона."; },
     "журнал": ()=> showIncidentLog(),
     "экспорт журнала": ()=> { exportIncidentLog(); return null; },
-    "экспорт журнала": ()=> { exportIncidentLog(); return null; },
+    "экспорт сессии": ()=> { exportFullSession(); return null; },
+    "достижения": ()=> showAchievements(),
+    "поймать молнию": ()=> { openLightningGame(); return null; },
     "аномалии": ()=> checkTimelineAnomalies(),
     "хроника сезонов": ()=> showSeasonChronicle(),
+    "что нового": ()=> "ЧТО НОВОГО:\n— Быстрая загрузка: молния вместо сканера ладони\n— Мини-викторина по лору (команда «викторина»)\n— Экспорт бортового журнала в файл\n— Счётчик найденных секретных архивов\n— Кнопка «Поделиться» ссылкой на систему\n— Ярлыки быстрого доступа с главного экрана\n— Симулятор: фон Централ-Сити, осколки времени, комбо-очки, фоновый эмбиент",
     "викторина": ()=> { openQuiz(); return null; },
     "доходяг": ()=> { openEasterEgg2(); return "Файл найден. Не спрашивайте."; },
   };
@@ -338,24 +556,6 @@
     });
     return "БОРТОВОЙ ЖУРНАЛ S.T.A.R. LABS — последние записи:\n" + entries.join('\n');
   }
-  function exportIncidentLog(){
-    if(incidentLog.length === 0){
-      notify('Журнал пуст — экспортировать нечего');
-      return;
-    }
-    let text = `GIDEON — бортовой журнал S.T.A.R. LABS (Doctor Wels)\n${new Date().toLocaleString('ru-RU')}\n${'='.repeat(40)}\n\n`;
-    incidentLog.forEach(e=>{
-      text += `[${e.time.toLocaleString('ru-RU')}] ${e.text}\n`;
-    });
-    const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `gideon-incident-log-${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    notify('Бортовой журнал экспортирован в файл');
-  }
 
   // ===== "Аномалии временной линии" — реальные данные погоды, поданные в стиле Гидеона =====
   async function checkTimelineAnomalies(){
@@ -384,7 +584,7 @@
       const phenomenon = codeDescriptions[code] || 'неклассифицированное отклонение';
 
       logIncident(`Сканирование аномалий: ${severity}, ${temp}°C, ветер ${wind} км/ч`);
-      if(severity === 'КРИТИЧЕСКАЯ') triggerAlarm();
+      if(severity === 'КРИТИЧЕСКАЯ'){ triggerAlarm(); triggerStorm(); }
       return `СКАНИРОВАНИЕ ЗАВЕРШЕНО.\nУровень отклонения временной линии: ${severity}\nТемпературный градиент: ${temp}°C\nСкорость потока (ветер): ${wind} км/ч\nХарактер аномалии: ${phenomenon}\n\n(Данные реальные, с метеоспутников — Гидеон просто подаёт их в стиле Спидфорса.)`;
     } catch(err){
       return "Не удалось получить доступ к геолокации или спутниковым данным. Проверьте разрешения браузера, Doctor Wels.";
@@ -531,13 +731,47 @@
     const content = document.getElementById('quiz-content');
     const total = quizQuestions.length;
     let verdict;
-    if(quizScore === total) verdict = 'Идеально, Doctor Wels. Спидфорс синхронизирован полностью.';
+    if(quizScore === total){
+      verdict = 'Идеально, Doctor Wels. Спидфорс синхронизирован полностью.';
+      gStats.quizPerfect = true;
+      saveStats();
+      checkAchievements();
+    }
     else if(quizScore >= total * 0.6) verdict = 'Неплохо, но пробелы в архиве есть.';
     else verdict = 'Слабый результат. Рекомендую пересмотреть хронику сезонов.';
     content.innerHTML = `
       <div class="quiz-result">Результат: ${quizScore} / ${total}<br><span style="font-size:12px;color:var(--text-dim)">${verdict}</span></div>
       <button class="quiz-restart" onclick="openQuiz()">Пройти ещё раз</button>
+      <button class="quiz-restart" onclick="shareQuizResult(${quizScore}, ${total})">📤 Похвастаться результатом</button>
     `;
+  }
+
+  async function shareQuizResult(score, total){
+    const url = new URL(window.location.href);
+    url.searchParams.set('quizScore', score);
+    url.searchParams.set('quizTotal', total);
+    const shareData = {
+      title: 'Викторина G.I.D.E.O.N.',
+      text: `Я набрал ${score} из ${total} в викторине по лору Спидфорса. Сможете лучше?`,
+      url: url.toString()
+    };
+    try{
+      if(navigator.share){
+        await navigator.share(shareData);
+      } else if(navigator.clipboard){
+        await navigator.clipboard.writeText(shareData.url);
+        notify('Ссылка с результатом скопирована в буфер обмена');
+      }
+    } catch(e){}
+  }
+
+  function checkSharedQuizResult(){
+    const params = new URLSearchParams(window.location.search);
+    const score = params.get('quizScore');
+    const total = params.get('quizTotal');
+    if(score !== null && total !== null){
+      notify(`👤 Результат друга: ${score} из ${total}. Сможете лучше?`);
+    }
   }
 
   function applyVisitVariety(){
@@ -772,6 +1006,7 @@
       conversation.push({role:'user', content:userText});
       conversation.push({role:'assistant', content:reply});
       await saveMemory();
+      bumpStat('messages');
     } catch(err){
       console.error('Ошибка вызова Гидеон-ядра:', err);
       const reply = localFallback(userText);
@@ -782,6 +1017,7 @@
       conversation.push({role:'user', content:userText});
       conversation.push({role:'assistant', content:reply});
       await saveMemory();
+      bumpStat('messages');
     } finally {
       setThinking(false);
     }
@@ -850,6 +1086,8 @@
   applyVisitVariety();
   updateStreak();
   initArchiveCounter();
+  loadStats().then(checkAchievements);
+  checkSharedQuizResult();
 
   // ===== Модальное окно симулятора =====
   const simModal = document.getElementById('sim-modal');
@@ -1055,7 +1293,7 @@
         bestRecord.maxCount = Math.max(bestRecord.maxCount, e.data.maxCount || 0);
         bestRecord.recordMass = Math.max(bestRecord.recordMass, e.data.recordMass || 0);
         storageSet(RECORD_KEY, JSON.stringify(bestRecord));
-        if(beatCount || beatMass) notify('🏆 Новый рекорд Спидфорса!');
+        if(beatCount || beatMass){ notify('🏆 Новый рекорд Спидфорса!'); bumpStat('recordsBeat'); }
       }
     }
     if(e.data.type === 'sf-explosion'){
@@ -1133,6 +1371,7 @@
   document.addEventListener('keydown', e=>{
     if(e.key === 'Escape' && simModal.classList.contains('open')) closeSimModal();
     if(e.key === 'Escape' && document.getElementById('quiz-modal').classList.contains('open')) closeQuiz();
+    if(e.key === 'Escape' && document.getElementById('lightning-game-modal').classList.contains('open')) closeLightningGame();
   });
 
   // ===== Экспорт диалога =====
@@ -1172,6 +1411,50 @@
     a.click();
     URL.revokeObjectURL(url);
     notify('Бортовой журнал экспортирован в файл');
+  }
+
+  async function exportFullSession(){
+    if(conversation.length === 0 && incidentLog.length === 0){
+      notify('Сессия пуста — экспортировать нечего');
+      return;
+    }
+    let text = `GIDEON — полный экспорт сессии\nDoctor Wels\n${new Date().toLocaleString('ru-RU')}\n${'='.repeat(40)}\n\n`;
+
+    text += `--- ДИАЛОГ ---\n\n`;
+    if(conversation.length === 0){
+      text += '(пусто)\n\n';
+    } else {
+      conversation.forEach(m=>{
+        text += (m.role === 'user' ? 'Doctor Wels: ' : 'Гидеон: ') + m.content + '\n\n';
+      });
+    }
+
+    text += `\n--- БОРТОВОЙ ЖУРНАЛ ---\n\n`;
+    if(incidentLog.length === 0){
+      text += '(пусто)\n\n';
+    } else {
+      incidentLog.forEach(e=>{
+        text += `[${e.time.toLocaleString('ru-RU')}] ${e.text}\n`;
+      });
+    }
+
+    text += `\n--- СЦЕНА СИМУЛЯТОРА ---\n\n`;
+    try{
+      const scene = await storageGet(SCENE_KEY);
+      text += scene && scene.value ? scene.value : '(сцена не сохранена)';
+    } catch(e){
+      text += '(сцена не сохранена)';
+    }
+
+    const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gideon-full-session-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify('Полная сессия экспортирована в файл');
+    logIncident('Экспортирована полная сессия (диалог + журнал + сцена)');
   }
 
   // ===== Тема (синхронизирована с симулятором) =====
