@@ -117,6 +117,23 @@
     }, 1700);
   })();
 
+  // ===== Индикатор состояния сети в реальном времени =====
+  function updateLinkStatus(){
+    const dot = document.getElementById('link-dot');
+    const label = document.getElementById('link-status');
+    if(!dot || !label) return;
+    if(navigator.onLine){
+      dot.classList.remove('offline');
+      label.textContent = 'SPEED FORCE LINK: ACTIVE';
+    } else {
+      dot.classList.add('offline');
+      label.textContent = 'SPEED FORCE LINK: OFFLINE';
+    }
+  }
+  window.addEventListener('online', ()=>{ updateLinkStatus(); notify('🔗 Связь восстановлена'); });
+  window.addEventListener('offline', ()=>{ updateLinkStatus(); notify('⚠ Связь потеряна — офлайн-режим'); });
+  updateLinkStatus();
+
   // ===== Свечение ядра при вводе =====
   cmdInput.addEventListener('input', ()=>{
     const len = Math.min(cmdInput.value.length, 40);
