@@ -648,19 +648,6 @@
   }
 
   // Красим молнию загрузки под сохранённую тему — до того, как остальной интерфейс её подхватит
-  (async function applyBootBoltTheme(){
-    try{
-      const stored = await storageGet('gideon-theme');
-      if(stored && stored.value){
-        const data = JSON.parse(stored.value);
-        if(data.negative && boltEl){
-          boltEl.setAttribute('fill', '#ff3b5c');
-          boltEl.style.filter = 'drop-shadow(0 0 14px rgba(255,59,92,0.8))';
-        }
-      }
-    } catch(e){}
-  })();
-
   // ===== Память (window.storage) =====
   // ===== Бортовой журнал инцидентов =====
   let incidentLog = [];
