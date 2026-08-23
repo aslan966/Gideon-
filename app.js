@@ -286,6 +286,47 @@
     return `ДОСТИЖЕНИЯ (${unlocked.length}/${ACHIEVEMENTS.length}):\n\n` + lines.join('\n');
   }
 
+  // ===== Реальный статус системы (не заготовленная фраза, а живые данные) =====
+  async function buildStatusReport(){
+    const link = navigator.onLine ? 'ACTIVE' : 'OFFLINE';
+    const now = new Date().toLocaleString('ru-RU');
+    const theme = negTheme ? 'НЕГАТИВНЫЙ' : 'НОМИНАЛЬНЫЙ';
+
+    let streakCount = 0;
+    try{
+      const s = await storageGet('gideon-streak');
+      if(s && s.value) streakCount = JSON.parse(s.value).count || 0;
+    } catch(e){}
+
+    let secretsFound = 0;
+    try{
+      const d = await storageGet(DISCOVERED_KEY);
+      if(d && d.value) secretsFound = JSON.parse(d.value).length;
+    } catch(e){}
+
+    let achievementsUnlocked = 0;
+    try{
+      const u = await storageGet(UNLOCKED_KEY);
+      if(u && u.value) achievementsUnlocked = JSON.parse(u.value).length;
+    } catch(e){}
+
+    const messagesSent = gStats.messages || 0;
+    const recordInfo = bestRecord.maxCount > 0
+      ? `${bestRecord.maxCount} частиц / масса ${bestRecord.recordMass.toFixed ? bestRecord.recordMass.toFixed(1) : bestRecord.recordMass}`
+      : 'рекордов пока нет';
+
+    return [
+      `СТАТУС СИСТЕМЫ — ${now}`,
+      `SPEED FORCE LINK: ${link}`,
+      `Режим: ${theme}`,
+      `Связь установлена: ${streakCount}-й день подряд`,
+      `Секретных архивов найдено: ${secretsFound}/${TOTAL_SECRETS}`,
+      `Достижений разблокировано: ${achievementsUnlocked}/${ACHIEVEMENTS.length}`,
+      `Сообщений отправлено Гидеону: ${messagesSent}`,
+      `Рекорд симулятора: ${recordInfo}`,
+    ].join('\n');
+  }
+
   // ===== Мини-игра "Поймай молнию" =====
   const GAME_BEST_KEY = 'gideon-lightning-game-best';
   let gameScore = 0;
@@ -493,7 +534,6 @@
 
   // ===== Локальный фолбэк-словарь (на случай, если API недоступен) =====
   const fallbackResponses = {
-    "статус": "Все системы функционируют штатно. Уровень отклонения временной линии: 0.03%. Аномалий не обнаружено.",
     "савитар": "Савитар — будущая, искажённая версия Барри Аллена, изолированная в Спидфорсе на долгие годы. Его мифологический аналог очевиден — Бог Движения.",
     "годспид": "Годспид — Август Хеуорт, спидстер, одержимый идеей 'усовершенствовать' скорость через убийство других спидстеров ради их силы.",
     "флэш": "Барри Аллен. Криминалист CCPD, получивший сверхскорость после удара молнии и взрыва ускорителя частиц.",
@@ -547,6 +587,7 @@
     "экспорт сессии": ()=> { exportFullSession(); return null; },
     "достижения": ()=> showAchievements(),
     "поймать молнию": ()=> { openLightningGame(); return null; },
+    "статус": ()=> buildStatusReport(),
     "день недели": ()=> { openDayOfWeek(); return null; },
     "хронометраж": ()=> { openWatchtime(); return null; },
     "тема гидеона": ()=> { toggleThemeSong(); return null; },
