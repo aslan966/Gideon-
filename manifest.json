@@ -11,12 +11,6 @@
   ],
   "shortcuts": [
     {
-      "name": "Симулятор Спидфорса",
-      "short_name": "Симулятор",
-      "url": "./index.html?open=sim",
-      "icons": [{ "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
-    },
-    {
       "name": "Терминал Гидеона",
       "short_name": "Терминал",
       "url": "./index.html?open=terminal",
