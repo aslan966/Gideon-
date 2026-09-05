@@ -380,33 +380,57 @@
     }
   }
 
-  async function openMotionScanner(){
-    document.getElementById('motion-modal').classList.add('open');
-    document.getElementById('motion-log').innerHTML = '';
-    document.getElementById('motion-status').textContent = 'Запрос доступа к камере...';
-    logIncident('Открыт сканер движения');
+  let motionFacingMode = 'environment';
 
+  async function startMotionStream(){
+    document.getElementById('motion-status').textContent = 'Запрос доступа к камере...';
+    if(motionStream){
+      motionStream.getTracks().forEach(t => t.stop());
+      motionStream = null;
+    }
     try{
-      motionStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      motionStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: motionFacingMode } });
     } catch(e){
       try{
         motionStream = await navigator.mediaDevices.getUserMedia({ video: true });
       } catch(e2){
         document.getElementById('motion-status').textContent = '⚠ Камера недоступна или доступ запрещён';
         motionLog('Ошибка доступа к камере: ' + (e2.message || 'нет разрешения'), true);
-        return;
+        return false;
       }
     }
-
     const video = document.getElementById('cam');
     video.srcObject = motionStream;
     document.getElementById('motion-status').textContent = 'Сканирование зоны наблюдения...';
+    motionPrevFrame = null;
+    return true;
+  }
+
+  async function openMotionScanner(){
+    document.getElementById('motion-modal').classList.add('open');
+    document.getElementById('motion-log').innerHTML = '';
+    logIncident('Открыт сканер движения');
+
+    const ok = await startMotionStream();
+    if(!ok) return;
+
     motionActive = true;
     motionPaused = false;
-    motionPrevFrame = null;
     document.getElementById('motion-toggle-btn').textContent = '⏸ ПАУЗА';
-    motionLog('Сканер активирован');
+    motionLog('Сканер активирован (' + (motionFacingMode === 'environment' ? 'задняя камера' : 'фронтальная камера') + ')');
     requestAnimationFrame(motionLoop);
+  }
+
+  async function switchMotionCamera(){
+    motionFacingMode = motionFacingMode === 'environment' ? 'user' : 'environment';
+    const ok = await startMotionStream();
+    if(ok){
+      motionLog('Переключено на: ' + (motionFacingMode === 'environment' ? 'заднюю камеру' : 'фронтальную камеру'));
+      hVibrate(30);
+    } else {
+      // не удалось переключиться — откатываем режим обратно
+      motionFacingMode = motionFacingMode === 'environment' ? 'user' : 'environment';
+    }
   }
 
   function closeMotionScanner(){

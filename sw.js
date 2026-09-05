@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gideon-cache-v18';
+const CACHE_NAME = 'gideon-cache-v19';
 const APP_SHELL = ['./', './index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (event) => {
