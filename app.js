@@ -66,6 +66,20 @@
   const notifyBox = document.getElementById('notify');
   const boltEl = document.getElementById('boot-bolt');
 
+  // Красим молнию загрузки под сохранённую тему — синяя в обычном режиме, красная в негативном
+  (async function applyBootBoltTheme(){
+    try{
+      const stored = await storageGet('gideon-theme');
+      if(stored && stored.value){
+        const data = JSON.parse(stored.value);
+        if(data.negative){
+          boltEl.setAttribute('fill', '#ff3b5c');
+          boltEl.style.filter = 'drop-shadow(0 0 14px rgba(255,59,92,0.8))';
+        }
+      }
+    } catch(e){}
+  })();
+
   // ===== Часы =====
   const clockEl = document.getElementById('clock');
   function tickClock(){
@@ -384,22 +398,38 @@
 
   async function startMotionStream(){
     document.getElementById('motion-status').textContent = 'Запрос доступа к камере...';
+
+    const video = document.getElementById('cam');
     if(motionStream){
       motionStream.getTracks().forEach(t => t.stop());
       motionStream = null;
+      video.srcObject = null;
+      // даём камере время реально освободиться перед повторным запросом
+      await new Promise(r => setTimeout(r, 250));
     }
+
+    // Пробуем жёстко потребовать нужную камеру (exact), иначе браузеры
+    // часто просто игнорируют facingMode как "пожелание" и не переключаются
     try{
-      motionStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: motionFacingMode } });
+      motionStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: motionFacingMode } }
+      });
     } catch(e){
       try{
-        motionStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        motionStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: motionFacingMode }
+        });
       } catch(e2){
-        document.getElementById('motion-status').textContent = '⚠ Камера недоступна или доступ запрещён';
-        motionLog('Ошибка доступа к камере: ' + (e2.message || 'нет разрешения'), true);
-        return false;
+        try{
+          motionStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch(e3){
+          document.getElementById('motion-status').textContent = '⚠ Камера недоступна или доступ запрещён';
+          motionLog('Ошибка доступа к камере: ' + (e3.message || 'нет разрешения'), true);
+          return false;
+        }
       }
     }
-    const video = document.getElementById('cam');
+
     video.srcObject = motionStream;
     document.getElementById('motion-status').textContent = 'Сканирование зоны наблюдения...';
     motionPrevFrame = null;
@@ -417,6 +447,9 @@
     motionActive = true;
     motionPaused = false;
     document.getElementById('motion-toggle-btn').textContent = '⏸ ПАУЗА';
+    const faceBtn = document.getElementById('face-greet-btn');
+    faceBtn.textContent = faceGreetEnabled ? '👤 ПРИВЕТСТВИЕ: ВКЛ' : '👤 ПРИВЕТСТВИЕ: ВЫКЛ';
+    faceBtn.classList.toggle('active-tool', faceGreetEnabled);
     motionLog('Сканер активирован (' + (motionFacingMode === 'environment' ? 'задняя камера' : 'фронтальная камера') + ')');
     requestAnimationFrame(motionLoop);
   }
@@ -452,6 +485,87 @@
       : 'Сканирование зоны наблюдения...';
   }
 
+  // ===== Приветствие по лицу =====
+  // Важно: это ОБНАРУЖЕНИЕ лица в кадре, а не проверка личности — модель
+  // просто определяет "здесь есть лицо", и раз устройство личное, Гидеон
+  // считает, что это Doctor Wels. Не путать с настоящим распознаванием.
+  const FACE_API_JS = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js';
+  const FACE_API_MODELS = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+  let faceApiState = 'idle'; // idle | loading | ready | failed
+  let faceGreetEnabled = false;
+  let lastFaceCheck = 0;
+  let lastFaceGreet = 0;
+
+  function loadScript(src){
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensureFaceApi(){
+    if(faceApiState === 'ready') return true;
+    if(faceApiState === 'failed') return false;
+    faceApiState = 'loading';
+    document.getElementById('motion-status').textContent = 'Загрузка модуля распознавания лиц...';
+    try{
+      if(typeof faceapi === 'undefined'){
+        await loadScript(FACE_API_JS);
+      }
+      await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODELS);
+      faceApiState = 'ready';
+      return true;
+    } catch(e){
+      faceApiState = 'failed';
+      motionLog('Не удалось загрузить модуль распознавания лиц (нужен интернет)', true);
+      document.getElementById('motion-status').textContent = 'Сканирование зоны наблюдения...';
+      return false;
+    }
+  }
+
+  async function toggleFaceGreet(){
+    const btn = document.getElementById('face-greet-btn');
+    if(!faceGreetEnabled){
+      btn.disabled = true;
+      const ok = await ensureFaceApi();
+      btn.disabled = false;
+      if(!ok) return;
+      faceGreetEnabled = true;
+      btn.textContent = '👤 ПРИВЕТСТВИЕ: ВКЛ';
+      btn.classList.add('active-tool');
+      motionLog('Приветствие по лицу включено');
+    } else {
+      faceGreetEnabled = false;
+      btn.textContent = '👤 ПРИВЕТСТВИЕ: ВЫКЛ';
+      btn.classList.remove('active-tool');
+      motionLog('Приветствие по лицу выключено');
+    }
+  }
+
+  async function checkForFace(){
+    const video = document.getElementById('cam');
+    if(video.readyState < 2) return;
+    try{
+      const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
+      if(detection){
+        const now = Date.now();
+        if(now - lastFaceGreet > 15000){
+          lastFaceGreet = now;
+          notify('👋 Здравствуйте, Doctor Wels');
+          speak('Здравствуйте, Doctor Wels');
+          hVibrate([40, 30, 40]);
+          motionLog('Обнаружено лицо — приветствие отправлено');
+          logIncident('Сканер: обнаружено лицо, выполнено приветствие');
+        }
+      }
+    } catch(e){
+      // модель могла не успеть прогрузиться — просто пропускаем кадр
+    }
+  }
+
   function motionLoop(){
     if(!motionActive) return;
     const video = document.getElementById('cam');
@@ -472,6 +586,14 @@
         if(motionDetected) onMotionDetected(diffCount);
       }
       motionPrevFrame = frame;
+
+      if(faceGreetEnabled && faceApiState === 'ready'){
+        const now = Date.now();
+        if(now - lastFaceCheck > 700){
+          lastFaceCheck = now;
+          checkForFace();
+        }
+      }
     }
 
     requestAnimationFrame(motionLoop);
