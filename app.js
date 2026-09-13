@@ -447,11 +447,26 @@
     motionActive = true;
     motionPaused = false;
     document.getElementById('motion-toggle-btn').textContent = '⏸ ПАУЗА';
-    const faceBtn = document.getElementById('face-greet-btn');
-    faceBtn.textContent = faceGreetEnabled ? '👤 ПРИВЕТСТВИЕ: ВКЛ' : '👤 ПРИВЕТСТВИЕ: ВЫКЛ';
-    faceBtn.classList.toggle('active-tool', faceGreetEnabled);
     motionLog('Сканер активирован (' + (motionFacingMode === 'environment' ? 'задняя камера' : 'фронтальная камера') + ')');
     requestAnimationFrame(motionLoop);
+
+    // Распознавание лица запускается сразу, без отдельного включения
+    const faceOk = await ensureFaceApi();
+    if(faceOk){
+      await loadRegisteredFace();
+      faceGreetEnabled = true;
+      motionLog(registeredDescriptor
+        ? 'Распознавание лица активно (эталон уже задан)'
+        : 'Распознавание лица активно — первое увиденное лицо станет эталоном Doctor Wels');
+    }
+  }
+
+  async function resetRegisteredFace(){
+    registeredDescriptor = null;
+    try{ await storageSet(FACE_DESCRIPTOR_KEY, ''); } catch(e){}
+    motionLog('Эталон лица сброшен — следующее увиденное лицо станет новым эталоном');
+    notify('Эталон лица сброшен');
+    hVibrate(30);
   }
 
   async function switchMotionCamera(){
@@ -485,16 +500,28 @@
       : 'Сканирование зоны наблюдения...';
   }
 
-  // ===== Приветствие по лицу =====
-  // Важно: это ОБНАРУЖЕНИЕ лица в кадре, а не проверка личности — модель
-  // просто определяет "здесь есть лицо", и раз устройство личное, Гидеон
-  // считает, что это Doctor Wels. Не путать с настоящим распознаванием.
+  // ===== Распознавание лица =====
+  // Первое увиденное лицо автоматически становится эталоном "Doctor Wels"
+  // (сравнение дескрипторов, не просто факт наличия лица в кадре).
+  // Любое последующее лицо, не совпадающее с эталоном, помечается как незнакомец.
   const FACE_API_JS = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js';
   const FACE_API_MODELS = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+  const FACE_DESCRIPTOR_KEY = 'gideon-face-descriptor';
+  const FACE_MATCH_THRESHOLD = 0.55; // чем меньше, тем строже сравнение
   let faceApiState = 'idle'; // idle | loading | ready | failed
   let faceGreetEnabled = false;
+  let registeredDescriptor = null;
   let lastFaceCheck = 0;
   let lastFaceGreet = 0;
+
+  async function loadRegisteredFace(){
+    try{
+      const stored = await storageGet(FACE_DESCRIPTOR_KEY);
+      if(stored && stored.value){
+        registeredDescriptor = new Float32Array(JSON.parse(stored.value));
+      }
+    } catch(e){}
+  }
 
   function loadScript(src){
     return new Promise((resolve, reject) => {
@@ -510,12 +537,14 @@
     if(faceApiState === 'ready') return true;
     if(faceApiState === 'failed') return false;
     faceApiState = 'loading';
-    document.getElementById('motion-status').textContent = 'Загрузка модуля распознавания лиц...';
+    document.getElementById('motion-status').textContent = 'Загрузка модуля распознавания лиц (~7 МБ)...';
     try{
       if(typeof faceapi === 'undefined'){
         await loadScript(FACE_API_JS);
       }
       await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODELS);
+      await faceapi.nets.faceLandmark68Net.loadFromUri(FACE_API_MODELS);
+      await faceapi.nets.faceRecognitionNet.loadFromUri(FACE_API_MODELS);
       faceApiState = 'ready';
       return true;
     } catch(e){
@@ -526,40 +555,43 @@
     }
   }
 
-  async function toggleFaceGreet(){
-    const btn = document.getElementById('face-greet-btn');
-    if(!faceGreetEnabled){
-      btn.disabled = true;
-      const ok = await ensureFaceApi();
-      btn.disabled = false;
-      if(!ok) return;
-      faceGreetEnabled = true;
-      btn.textContent = '👤 ПРИВЕТСТВИЕ: ВКЛ';
-      btn.classList.add('active-tool');
-      motionLog('Приветствие по лицу включено');
-    } else {
-      faceGreetEnabled = false;
-      btn.textContent = '👤 ПРИВЕТСТВИЕ: ВЫКЛ';
-      btn.classList.remove('active-tool');
-      motionLog('Приветствие по лицу выключено');
-    }
-  }
-
   async function checkForFace(){
     const video = document.getElementById('cam');
     if(video.readyState < 2) return;
+    const now = Date.now();
+    if(now - lastFaceGreet < 15000) return;
+
     try{
-      const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
-      if(detection){
-        const now = Date.now();
-        if(now - lastFaceGreet > 15000){
-          lastFaceGreet = now;
-          notify('👋 Здравствуйте, Doctor Wels');
-          speak('Здравствуйте, Doctor Wels');
-          hVibrate([40, 30, 40]);
-          motionLog('Обнаружено лицо — приветствие отправлено');
-          logIncident('Сканер: обнаружено лицо, выполнено приветствие');
-        }
+      const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks().withFaceDescriptor();
+      if(!detection) return;
+      lastFaceGreet = now;
+
+      if(!registeredDescriptor){
+        // Первое увиденное лицо автоматически становится эталоном Doctor Wels
+        registeredDescriptor = detection.descriptor;
+        await storageSet(FACE_DESCRIPTOR_KEY, JSON.stringify(Array.from(detection.descriptor)));
+        notify('👋 Здравствуйте, Doctor Wels');
+        speak('Здравствуйте, Doctor Wels');
+        hVibrate([40, 30, 40]);
+        motionLog('Эталон установлен автоматически — распознан как Doctor Wels');
+        logIncident('Сканер: автоматически зарегистрирован эталон лица (Doctor Wels)');
+        return;
+      }
+
+      const distance = faceapi.euclideanDistance(detection.descriptor, registeredDescriptor);
+      if(distance < FACE_MATCH_THRESHOLD){
+        notify('👋 Здравствуйте, Doctor Wels');
+        speak('Здравствуйте, Doctor Wels');
+        hVibrate([40, 30, 40]);
+        motionLog(`Лицо распознано как Doctor Wels (несовпадение: ${distance.toFixed(2)})`);
+        logIncident('Сканер: распознан Doctor Wels, выполнено приветствие');
+      } else {
+        notify('⚠ Незнакомец в кадре');
+        speak('Незнакомец');
+        triggerAlarm('⚠ Обнаружено неопознанное лицо');
+        motionLog(`Незнакомец — лицо не совпадает с эталоном (несовпадение: ${distance.toFixed(2)})`, true);
+        logIncident('⚠ Сканер: обнаружено незнакомое лицо');
       }
     } catch(e){
       // модель могла не успеть прогрузиться — просто пропускаем кадр
