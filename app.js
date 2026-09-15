@@ -1345,15 +1345,10 @@
     if(el) el.textContent = text;
   }
   function updateSpeedforceLabels(){
-    setText('sf-lbl-dat', sfWord('dat').toUpperCase());
     setText('sf-lbl-gen1', sfWord('gen'));
-    setText('sf-lbl-gen2', sfWord('gen'));
     setText('sf-lbl-gen3', sfWord('gen'));
     setText('sf-card-title', negTheme ? 'Синхронизация с Негативным Спидфорсом' : 'Спидфорс-синхронизация');
     setText('sf-lbl-footer', negTheme ? 'NEGATIVE SPEED FORCE' : 'SPEED FORCE');
-    setText('sf-lbl-sim-exe', negTheme ? 'NEGATIVE_SPEEDFORCE' : 'SPEEDFORCE');
-    const btn = document.getElementById('header-cta-btn');
-    if(btn) btn.title = `Открыть симулятор ${sfWord('gen')}`;
   }
   function toggleTheme(){
     setTheme(!negTheme);
